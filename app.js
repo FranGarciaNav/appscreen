@@ -3027,6 +3027,12 @@ function updateSidePreviews() {
     const maxPreviewHeight = 700;
     const previewScale = Math.min(maxPreviewWidth / dims.width, maxPreviewHeight / dims.height);
 
+    // Initialize Three.js if any screenshot uses 3D mode (needed for side previews)
+    const any3D = state.screenshots.some(s => s.screenshot?.use3D);
+    if (any3D && typeof showThreeJS === 'function') {
+        showThreeJS(true);
+    }
+
     // Calculate main canvas display width and position side previews with 10px gap
     const mainCanvasWidth = dims.width * previewScale;
     const gap = 10;
@@ -3263,99 +3269,212 @@ function drawScreenshotToContext(context, dims, img, settings) {
     const centerY = y + imgHeight / 2;
 
     context.save();
+
+    // Apply transformations
     context.translate(centerX, centerY);
 
-    if (settings.rotation) {
+    // Apply rotation
+    if (settings.rotation !== 0) {
         context.rotate(settings.rotation * Math.PI / 180);
     }
 
-    // Shadow
+    // Apply perspective (simulated with scale transform)
+    if (settings.perspective !== 0) {
+        context.transform(1, settings.perspective * 0.01, 0, 1, 0, 0);
+    }
+
+    context.translate(-centerX, -centerY);
+
+    // Scale corner radius with image size
+    const radius = (settings.cornerRadius || 0) * (imgWidth / 400);
+
+    // Draw shadow first (needs a filled shape, not clipped)
     if (settings.shadow && settings.shadow.enabled) {
         const shadowOpacity = settings.shadow.opacity / 100;
-        context.shadowColor = settings.shadow.color + Math.round(shadowOpacity * 255).toString(16).padStart(2, '0');
+        const shadowColor = settings.shadow.color + Math.round(shadowOpacity * 255).toString(16).padStart(2, '0');
+        context.shadowColor = shadowColor;
         context.shadowBlur = settings.shadow.blur;
         context.shadowOffsetX = settings.shadow.x;
         context.shadowOffsetY = settings.shadow.y;
+
+        // Draw filled rounded rect for shadow
+        context.fillStyle = '#000';
+        context.beginPath();
+        context.roundRect(x, y, imgWidth, imgHeight, radius);
+        context.fill();
+
+        // Reset shadow before drawing image
+        context.shadowColor = 'transparent';
+        context.shadowBlur = 0;
+        context.shadowOffsetX = 0;
+        context.shadowOffsetY = 0;
     }
 
-    // Draw rounded rectangle
-    const cornerRadius = settings.cornerRadius || 0;
+    // Clip and draw image
     context.beginPath();
-    context.roundRect(-imgWidth / 2, -imgHeight / 2, imgWidth, imgHeight, cornerRadius);
-    context.closePath();
+    context.roundRect(x, y, imgWidth, imgHeight, radius);
     context.clip();
+    context.drawImage(img, x, y, imgWidth, imgHeight);
 
-    context.drawImage(img, -imgWidth / 2, -imgHeight / 2, imgWidth, imgHeight);
     context.restore();
+
+    // Draw device frame if enabled
+    if (settings.frame && settings.frame.enabled) {
+        context.save();
+        context.translate(centerX, centerY);
+        if (settings.rotation !== 0) {
+            context.rotate(settings.rotation * Math.PI / 180);
+        }
+        if (settings.perspective !== 0) {
+            context.transform(1, settings.perspective * 0.01, 0, 1, 0, 0);
+        }
+        context.translate(-centerX, -centerY);
+        drawDeviceFrameToContext(context, x, y, imgWidth, imgHeight, settings);
+        context.restore();
+    }
+}
+
+function drawDeviceFrameToContext(context, x, y, width, height, settings) {
+    const frameColor = settings.frame.color;
+    const frameWidth = settings.frame.width * (width / 400);
+    const frameOpacity = settings.frame.opacity / 100;
+    const radius = (settings.cornerRadius || 0) * (width / 400) + frameWidth;
+
+    context.globalAlpha = frameOpacity;
+    context.strokeStyle = frameColor;
+    context.lineWidth = frameWidth;
+    context.beginPath();
+    context.roundRect(x - frameWidth/2, y - frameWidth/2, width + frameWidth, height + frameWidth, radius);
+    context.stroke();
+
+    // Draw notch or dynamic island for iPhones
+    if (settings.frame.style !== 'simple' && settings.frame.style && settings.frame.style.includes('iphone')) {
+        if (settings.frame.style.includes('pro') || settings.frame.style === 'iphone-15') {
+            // Dynamic Island
+            const islandWidth = width * 0.25;
+            const islandHeight = height * 0.025;
+            const islandX = x + (width - islandWidth) / 2;
+            const islandY = y + frameWidth + height * 0.01;
+            const islandRadius = islandHeight / 2;
+
+            context.fillStyle = frameColor;
+            context.beginPath();
+            context.roundRect(islandX, islandY, islandWidth, islandHeight, islandRadius);
+            context.fill();
+        } else {
+            // Notch
+            const notchWidth = width * 0.35;
+            const notchHeight = height * 0.035;
+            const notchX = x + (width - notchWidth) / 2;
+            const notchY = y + frameWidth;
+            const notchRadius = notchHeight / 3;
+
+            context.fillStyle = frameColor;
+            context.beginPath();
+            context.roundRect(notchX, notchY, notchWidth, notchHeight, [0, 0, notchRadius, notchRadius]);
+            context.fill();
+        }
+    }
+
+    context.globalAlpha = 1;
 }
 
 function drawTextToContext(context, dims, txt) {
-    const currentHeadline = txt.headlines ? (txt.headlines[txt.currentHeadlineLang || 'en'] || '') : '';
-    const currentSubheadline = txt.subheadlines ? (txt.subheadlines[txt.currentSubheadlineLang || 'en'] || '') : '';
+    const headline = txt.headlines ? (txt.headlines[txt.currentHeadlineLang || 'en'] || '') : '';
+    const subheadline = txt.subheadlines ? (txt.subheadlines[txt.currentSubheadlineLang || 'en'] || '') : '';
 
-    if (!currentHeadline && !currentSubheadline) return;
+    if (!headline && !subheadline) return;
 
-    const scaleFactor = dims.width / 1290;
-    const headlineSize = (txt.headlineSize || 100) * scaleFactor;
-    const subheadlineSize = (txt.subheadlineSize || 50) * scaleFactor;
-    const offsetY = (txt.offsetY || 12) / 100 * dims.height;
-    const lineHeight = (txt.lineHeight || 110) / 100;
+    const padding = dims.width * 0.08;
+    const textY = txt.position === 'top'
+        ? dims.height * (txt.offsetY / 100)
+        : dims.height * (1 - txt.offsetY / 100);
 
-    // Calculate text position
-    let textY;
-    if (txt.position === 'top') {
-        textY = offsetY + headlineSize;
-    } else {
-        textY = dims.height - offsetY - subheadlineSize * 1.5;
-    }
+    context.textAlign = 'center';
+    context.textBaseline = txt.position === 'top' ? 'top' : 'bottom';
 
-    const textX = dims.width / 2;
+    let currentY = textY;
 
     // Draw headline
-    if (currentHeadline) {
-        const fontStyle = txt.headlineItalic ? 'italic ' : '';
-        context.font = `${fontStyle}${txt.headlineWeight || '600'} ${headlineSize}px ${txt.headlineFont || 'system-ui'}`;
-        context.fillStyle = txt.headlineColor || '#ffffff';
-        context.textAlign = 'center';
-        context.textBaseline = 'top';
+    if (headline) {
+        const fontStyle = txt.headlineItalic ? 'italic' : 'normal';
+        context.font = `${fontStyle} ${txt.headlineWeight} ${txt.headlineSize}px ${txt.headlineFont}`;
+        context.fillStyle = txt.headlineColor;
 
-        const lines = currentHeadline.split('\n');
+        const lines = wrapText(context, headline, dims.width - padding * 2);
+        const lineHeight = txt.headlineSize * (txt.lineHeight / 100);
+
+        if (txt.position === 'bottom') {
+            currentY -= (lines.length - 1) * lineHeight;
+        }
+
         lines.forEach((line, i) => {
-            const lineY = textY + i * headlineSize * lineHeight;
-            context.fillText(line, textX, lineY);
+            const y = currentY + i * lineHeight;
+            context.fillText(line, dims.width / 2, y);
 
+            // Calculate text metrics for decorations
+            const textWidth = context.measureText(line).width;
+            const fontSize = txt.headlineSize;
+            const lineThickness = Math.max(2, fontSize * 0.05);
+            const x = dims.width / 2 - textWidth / 2;
+
+            // Draw underline
             if (txt.headlineUnderline) {
-                const metrics = context.measureText(line);
-                const underlineY = lineY + headlineSize * 0.9;
-                context.fillRect(textX - metrics.width / 2, underlineY, metrics.width, headlineSize * 0.05);
+                const underlineY = txt.position === 'top'
+                    ? y + fontSize * 0.9
+                    : y + fontSize * 0.1;
+                context.fillRect(x, underlineY, textWidth, lineThickness);
             }
 
+            // Draw strikethrough
             if (txt.headlineStrikethrough) {
-                const metrics = context.measureText(line);
-                const strikeY = lineY + headlineSize * 0.45;
-                context.fillRect(textX - metrics.width / 2, strikeY, metrics.width, headlineSize * 0.05);
+                const strikeY = txt.position === 'top'
+                    ? y + fontSize * 0.4
+                    : y - fontSize * 0.4;
+                context.fillRect(x, strikeY, textWidth, lineThickness);
             }
         });
 
-        textY += lines.length * headlineSize * lineHeight + headlineSize * 0.3;
+        currentY += lines.length * lineHeight;
     }
 
     // Draw subheadline
-    if (currentSubheadline) {
-        const fontStyle = txt.subheadlineItalic ? 'italic ' : '';
-        context.font = `${fontStyle}${txt.subheadlineWeight || '400'} ${subheadlineSize}px ${txt.subheadlineFont || 'system-ui'}`;
-        context.fillStyle = txt.subheadlineColor || '#ffffff';
-        context.globalAlpha = (txt.subheadlineOpacity || 70) / 100;
-        context.textAlign = 'center';
-        context.textBaseline = 'top';
+    if (subheadline) {
+        const subY = txt.position === 'top' ? currentY + 20 : textY + 30;
+        const subFontStyle = txt.subheadlineItalic ? 'italic' : 'normal';
+        const subWeight = txt.subheadlineWeight || '400';
+        context.font = `${subFontStyle} ${subWeight} ${txt.subheadlineSize}px ${txt.subheadlineFont || txt.headlineFont}`;
+        context.fillStyle = hexToRgba(txt.subheadlineColor, txt.subheadlineOpacity / 100);
 
-        const lines = currentSubheadline.split('\n');
+        const lines = wrapText(context, subheadline, dims.width - padding * 2);
+        const lineHeight = txt.subheadlineSize * 1.4;
+
         lines.forEach((line, i) => {
-            const lineY = textY + i * subheadlineSize * lineHeight;
-            context.fillText(line, textX, lineY);
-        });
+            const y = subY + i * lineHeight;
+            context.fillText(line, dims.width / 2, y);
 
-        context.globalAlpha = 1;
+            // Calculate text metrics for decorations
+            const textWidth = context.measureText(line).width;
+            const fontSize = txt.subheadlineSize;
+            const lineThickness = Math.max(2, fontSize * 0.05);
+            const x = dims.width / 2 - textWidth / 2;
+
+            // Draw underline
+            if (txt.subheadlineUnderline) {
+                const underlineY = txt.position === 'top'
+                    ? y + fontSize * 0.9
+                    : y + fontSize * 0.1;
+                context.fillRect(x, underlineY, textWidth, lineThickness);
+            }
+
+            // Draw strikethrough
+            if (txt.subheadlineStrikethrough) {
+                const strikeY = txt.position === 'top'
+                    ? y + fontSize * 0.4
+                    : y - fontSize * 0.4;
+                context.fillRect(x, strikeY, textWidth, lineThickness);
+            }
+        });
     }
 }
 

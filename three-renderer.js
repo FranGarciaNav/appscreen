@@ -173,9 +173,8 @@ function loadPhoneModel() {
                     updateScreenTexture();
                 }
 
-                // Refresh canvas now that model is loaded
-                const use3D = ss?.use3D || false;
-                if (use3D && typeof updateCanvas === 'function') {
+                // Refresh canvas now that model is loaded (needed for side previews too)
+                if (typeof updateCanvas === 'function') {
                     updateCanvas();
                 }
             }
@@ -364,6 +363,9 @@ function renderThreeJSToCanvas(targetCanvas, width, height) {
     threeCamera.aspect = dims.width / dims.height;
     threeCamera.updateProjectionMatrix();
 
+    // Clear the renderer before drawing (ensures clean transparency)
+    threeRenderer.clear();
+
     // Render with transparency
     threeRenderer.render(threeScene, threeCamera);
 
@@ -402,7 +404,7 @@ function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex
         const roundedImage = createRoundedScreenImage(screenshot.image, cornerRadius);
         const newTexture = new THREE.Texture(roundedImage);
         newTexture.needsUpdate = true;
-        newTexture.colorSpace = THREE.SRGBColorSpace;
+        newTexture.encoding = THREE.sRGBEncoding;
         newTexture.flipY = true;
 
         const newMaterial = new THREE.MeshBasicMaterial({
@@ -437,10 +439,13 @@ function renderThreeJSForScreenshot(targetCanvas, width, height, screenshotIndex
     threeCamera.aspect = dims.width / dims.height;
     threeCamera.updateProjectionMatrix();
 
+    // Clear the renderer before drawing (ensures clean transparency)
+    threeRenderer.clear();
+
     // Render with transparency
     threeRenderer.render(threeScene, threeCamera);
 
-    // Draw to target canvas
+    // Draw to target canvas (composite 3D phone onto existing background)
     const ctx = targetCanvas.getContext('2d');
     ctx.drawImage(threeRenderer.domElement, 0, 0, dims.width, dims.height);
 
