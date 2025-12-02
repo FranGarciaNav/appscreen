@@ -2855,7 +2855,7 @@ async function aiTranslateAll() {
     const apiKey = localStorage.getItem(providerConfig.storageKey);
 
     if (!apiKey) {
-        setTranslateStatus(`Add your ${providerConfig.name} API key in Settings to use AI translation.`, 'error');
+        setTranslateStatus(`Add your LLM API key in Settings to use AI translation.`, 'error');
         return;
     }
 
