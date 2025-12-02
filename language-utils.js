@@ -428,3 +428,133 @@ function closeExportLanguageDialog(choice) {
         window._exportLanguageCallback = null;
     }
 }
+
+// ==========================================
+// Duplicate Screenshot Dialog Functions
+// ==========================================
+
+// Queue for pending duplicate resolution
+let duplicateQueue = [];
+let currentDuplicateResolve = null;
+
+/**
+ * Show duplicate screenshot dialog
+ * @param {Object} params - Parameters for the dialog
+ * @param {number} params.existingIndex - Index of existing screenshot
+ * @param {string} params.detectedLang - Detected language of new file
+ * @param {Image} params.newImage - New image object
+ * @param {string} params.newSrc - Data URL of new image
+ * @param {string} params.newName - Filename of new file
+ * @returns {Promise<string>} - User choice: 'replace', 'create', or 'ignore'
+ */
+function showDuplicateDialog(params) {
+    return new Promise((resolve) => {
+        currentDuplicateResolve = resolve;
+
+        const modal = document.getElementById('duplicate-screenshot-modal');
+        if (!modal) {
+            resolve('create'); // fallback
+            return;
+        }
+
+        const screenshot = state.screenshots[params.existingIndex];
+        const existingThumb = document.getElementById('duplicate-existing-thumb');
+        const newThumb = document.getElementById('duplicate-new-thumb');
+        const existingName = document.getElementById('duplicate-existing-name');
+        const newName = document.getElementById('duplicate-new-name');
+        const langNameEl = document.getElementById('duplicate-lang-name');
+
+        // Get existing thumbnail for the specific language being replaced
+        const existingLangImg = screenshot.localizedImages?.[params.detectedLang]?.image;
+        if (existingThumb) {
+            if (existingLangImg) {
+                existingThumb.innerHTML = `<img src="${existingLangImg.src}" alt="Existing">`;
+            } else {
+                // No existing image for this language - show empty placeholder
+                existingThumb.innerHTML = `
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: var(--text-secondary); opacity: 0.5;">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <path d="M21 15l-5-5L5 21"/>
+                    </svg>
+                `;
+            }
+        }
+
+        // Set new thumbnail
+        if (newThumb && params.newImage) {
+            newThumb.innerHTML = `<img src="${params.newSrc}" alt="New">`;
+        }
+
+        // Set filenames
+        if (existingName) {
+            const existingLangName = screenshot.localizedImages?.[params.detectedLang]?.name;
+            if (existingLangName) {
+                existingName.textContent = existingLangName;
+            } else {
+                // Show that no image exists for this language yet
+                const flag = languageFlags[params.detectedLang] || '🏳️';
+                existingName.textContent = `No ${flag} image`;
+            }
+        }
+        if (newName) {
+            newName.textContent = params.newName;
+        }
+
+        // Set language name in replace description
+        if (langNameEl) {
+            const flag = languageFlags[params.detectedLang] || '🏳️';
+            const name = languageNames[params.detectedLang] || params.detectedLang.toUpperCase();
+            langNameEl.textContent = `${flag} ${name}`;
+        }
+
+        // Store params for handlers
+        modal.dataset.existingIndex = params.existingIndex;
+        modal.dataset.detectedLang = params.detectedLang;
+        window._duplicateNewImage = params.newImage;
+        window._duplicateNewSrc = params.newSrc;
+        window._duplicateNewName = params.newName;
+
+        modal.classList.add('visible');
+    });
+}
+
+/**
+ * Close duplicate dialog with a choice
+ * @param {string} choice - 'replace', 'create', or 'ignore'
+ */
+function closeDuplicateDialog(choice) {
+    const modal = document.getElementById('duplicate-screenshot-modal');
+    if (modal) {
+        modal.classList.remove('visible');
+    }
+
+    if (currentDuplicateResolve) {
+        currentDuplicateResolve(choice);
+        currentDuplicateResolve = null;
+    }
+
+    // Clean up stored data
+    window._duplicateNewImage = null;
+    window._duplicateNewSrc = null;
+    window._duplicateNewName = null;
+}
+
+/**
+ * Initialize duplicate dialog event listeners
+ */
+function initDuplicateDialogListeners() {
+    const replaceBtn = document.getElementById('duplicate-replace');
+    const createBtn = document.getElementById('duplicate-create-new');
+    const ignoreBtn = document.getElementById('duplicate-ignore');
+
+    if (replaceBtn) {
+        replaceBtn.addEventListener('click', () => closeDuplicateDialog('replace'));
+    }
+    if (createBtn) {
+        createBtn.addEventListener('click', () => closeDuplicateDialog('create'));
+    }
+    if (ignoreBtn) {
+        ignoreBtn.addEventListener('click', () => closeDuplicateDialog('ignore'));
+    }
+}

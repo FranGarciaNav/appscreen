@@ -1749,6 +1749,12 @@ function setupEventListeners() {
         if (e.target.id === 'export-language-modal') closeExportLanguageDialog(null);
     });
 
+    // Duplicate screenshot dialog
+    initDuplicateDialogListeners();
+    document.getElementById('duplicate-screenshot-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'duplicate-screenshot-modal') closeDuplicateDialog('ignore');
+    });
+
     // Translate button events
     document.getElementById('translate-headline-btn').addEventListener('click', () => {
         openTranslateModal('headline');
@@ -3220,68 +3226,97 @@ function applyPositionPreset(preset) {
 }
 
 function handleFiles(files) {
-    Array.from(files).forEach(file => {
-        if (file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    // Detect device type based on aspect ratio
-                    const ratio = img.width / img.height;
-                    let deviceType = 'iPhone';
-                    if (ratio > 0.6) {
-                        deviceType = 'iPad';
-                    }
+    // Process files sequentially to handle duplicates one at a time
+    processFilesSequentially(Array.from(files).filter(f => f.type.startsWith('image/')));
+}
 
-                    // Detect language from filename
-                    const detectedLang = detectLanguageFromFilename(file.name);
+async function processFilesSequentially(files) {
+    for (const file of files) {
+        await processImageFile(file);
+    }
+}
 
-                    // Check if this is a localized version of an existing screenshot
-                    const existingIndex = findScreenshotByBaseFilename(file.name);
+async function processImageFile(file) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const img = new Image();
+            img.onload = async () => {
+                // Detect device type based on aspect ratio
+                const ratio = img.width / img.height;
+                let deviceType = 'iPhone';
+                if (ratio > 0.6) {
+                    deviceType = 'iPad';
+                }
 
-                    if (existingIndex !== -1) {
-                        // Add as localized version of existing screenshot
+                // Detect language from filename
+                const detectedLang = detectLanguageFromFilename(file.name);
+
+                // Check if this is a localized version of an existing screenshot
+                const existingIndex = findScreenshotByBaseFilename(file.name);
+
+                if (existingIndex !== -1) {
+                    // Duplicate found - show dialog
+                    const choice = await showDuplicateDialog({
+                        existingIndex: existingIndex,
+                        detectedLang: detectedLang,
+                        newImage: img,
+                        newSrc: e.target.result,
+                        newName: file.name
+                    });
+
+                    if (choice === 'replace') {
+                        // Replace the localized version
                         addLocalizedImage(existingIndex, detectedLang, img, e.target.result, file.name);
-                    } else {
-                        // Create new screenshot entry
-                        const localizedImages = {};
-                        localizedImages[detectedLang] = {
-                            image: img,
-                            src: e.target.result,
-                            name: file.name
-                        };
-
-                        // Each screenshot gets its own copy of all settings from defaults
-                        state.screenshots.push({
-                            image: img, // Keep for legacy compatibility
-                            name: file.name,
-                            deviceType: deviceType,
-                            localizedImages: localizedImages,
-                            background: JSON.parse(JSON.stringify(state.defaults.background)),
-                            screenshot: JSON.parse(JSON.stringify(state.defaults.screenshot)),
-                            text: JSON.parse(JSON.stringify(state.defaults.text)),
-                            // Legacy overrides for backwards compatibility
-                            overrides: {}
-                        });
-
-                        updateScreenshotList();
-                        if (state.screenshots.length === 1) {
-                            state.selectedIndex = 0;
-                        }
+                    } else if (choice === 'create') {
+                        // Create as new screenshot
+                        createNewScreenshot(img, e.target.result, file.name, detectedLang, deviceType);
                     }
+                    // 'ignore' does nothing
+                } else {
+                    // No duplicate - create new screenshot
+                    createNewScreenshot(img, e.target.result, file.name, detectedLang, deviceType);
+                }
 
-                    // Update 3D texture if in 3D mode
-                    const ss = getScreenshotSettings();
-                    if (ss.use3D && typeof updateScreenTexture === 'function') {
-                        updateScreenTexture();
-                    }
-                    updateCanvas();
-                };
-                img.src = e.target.result;
+                // Update 3D texture if in 3D mode
+                const ss = getScreenshotSettings();
+                if (ss.use3D && typeof updateScreenTexture === 'function') {
+                    updateScreenTexture();
+                }
+                updateCanvas();
+                resolve();
             };
-            reader.readAsDataURL(file);
-        }
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
     });
+}
+
+function createNewScreenshot(img, src, name, lang, deviceType) {
+    const localizedImages = {};
+    localizedImages[lang] = {
+        image: img,
+        src: src,
+        name: name
+    };
+
+    // Each screenshot gets its own copy of all settings from defaults
+    state.screenshots.push({
+        image: img, // Keep for legacy compatibility
+        name: name,
+        deviceType: deviceType,
+        localizedImages: localizedImages,
+        background: JSON.parse(JSON.stringify(state.defaults.background)),
+        screenshot: JSON.parse(JSON.stringify(state.defaults.screenshot)),
+        text: JSON.parse(JSON.stringify(state.defaults.text)),
+        // Legacy overrides for backwards compatibility
+        overrides: {}
+    });
+
+    updateScreenshotList();
+    if (state.screenshots.length === 1) {
+        state.selectedIndex = 0;
+    }
 }
 
 let draggedScreenshotIndex = null;
@@ -3572,18 +3607,6 @@ function updateScreenshotList() {
             </div>
         `;
         uploadItem.addEventListener('click', () => fileInput.click());
-        uploadItem.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadItem.classList.add('dragover');
-        });
-        uploadItem.addEventListener('dragleave', () => {
-            uploadItem.classList.remove('dragover');
-        });
-        uploadItem.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadItem.classList.remove('dragover');
-            handleFiles(e.dataTransfer.files);
-        });
         screenshotList.appendChild(uploadItem);
     }
 
