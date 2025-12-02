@@ -136,4 +136,4 @@ MIT License - feel free to use, modify, and distribute.
 
 ## Author
 
-Proudly vibe coded by [Stefan from yuzuhub.com](https://yuzuhub.com)
+Proudly vibe coded by [Stefan from yuzuhub.com](https://yuzuhub.com/en)

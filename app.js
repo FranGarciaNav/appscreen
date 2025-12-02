@@ -4680,12 +4680,8 @@ async function exportAll() {
         return;
     }
 
-    // Check if we have multiple languages with images
-    const hasMultipleLanguages = state.projectLanguages.length > 1 &&
-        state.screenshots.some(s => {
-            const langs = getAvailableLanguagesForScreenshot(s);
-            return langs.length > 1;
-        });
+    // Check if project has multiple languages configured
+    const hasMultipleLanguages = state.projectLanguages.length > 1;
 
     if (hasMultipleLanguages) {
         // Show language choice dialog
