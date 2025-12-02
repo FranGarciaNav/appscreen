@@ -3920,12 +3920,15 @@ function drawTextToContext(context, dims, txt) {
         });
 
         // Track where subheadline should start (below the bottom edge of headline)
+        // The gap between headline and subheadline should be (lineHeight - fontSize)
+        // This is the "extra" spacing beyond the text itself
+        const gap = lineHeight - txt.headlineSize;
         if (txt.position === 'top') {
-            // For top: lastLineY is top of last line, add fontSize to get bottom
-            currentY = lastLineY + txt.headlineSize;
+            // For top: lastLineY is top of last line, add fontSize to get bottom, then add gap
+            currentY = lastLineY + txt.headlineSize + gap;
         } else {
-            // For bottom: lastLineY is bottom of last line, that's where text ends
-            currentY = lastLineY;
+            // For bottom: lastLineY is already the bottom of last line, just add gap
+            currentY = lastLineY + gap;
         }
     }
 
@@ -3937,17 +3940,17 @@ function drawTextToContext(context, dims, txt) {
         context.fillStyle = hexToRgba(txt.subheadlineColor, txt.subheadlineOpacity / 100);
 
         const lines = wrapText(context, subheadline, dims.width - padding * 2);
-        const lineHeight = txt.subheadlineSize * 1.4;
+        const subLineHeight = txt.subheadlineSize * 1.4;
 
-        // 20px gap from bottom of headline to top of subheadline
+        // Subheadline starts after headline with gap determined by headline lineHeight
         // For bottom position, switch to 'top' baseline so subheadline draws downward
-        const subY = currentY + 20;
+        const subY = currentY;
         if (txt.position === 'bottom') {
             context.textBaseline = 'top';
         }
 
         lines.forEach((line, i) => {
-            const y = subY + i * lineHeight;
+            const y = subY + i * subLineHeight;
             context.fillText(line, dims.width / 2, y);
 
             // Calculate text metrics for decorations
@@ -4222,12 +4225,15 @@ function drawText() {
         });
 
         // Track where subheadline should start (below the bottom edge of headline)
+        // The gap between headline and subheadline should be (lineHeight - fontSize)
+        // This is the "extra" spacing beyond the text itself
+        const gap = lineHeight - text.headlineSize;
         if (text.position === 'top') {
-            // For top: lastLineY is top of last line, add fontSize to get bottom
-            currentY = lastLineY + text.headlineSize;
+            // For top: lastLineY is top of last line, add fontSize to get bottom, then add gap
+            currentY = lastLineY + text.headlineSize + gap;
         } else {
-            // For bottom: lastLineY is bottom of last line, that's where text ends
-            currentY = lastLineY;
+            // For bottom: lastLineY is already the bottom of last line, just add gap
+            currentY = lastLineY + gap;
         }
     }
 
@@ -4239,17 +4245,17 @@ function drawText() {
         ctx.fillStyle = hexToRgba(text.subheadlineColor, text.subheadlineOpacity / 100);
 
         const lines = wrapText(ctx, subheadline, dims.width - padding * 2);
-        const lineHeight = text.subheadlineSize * 1.4;
+        const subLineHeight = text.subheadlineSize * 1.4;
 
-        // 20px gap from bottom of headline to top of subheadline
+        // Subheadline starts after headline with gap determined by headline lineHeight
         // For bottom position, switch to 'top' baseline so subheadline draws downward
-        const subY = currentY + 20;
+        const subY = currentY;
         if (text.position === 'bottom') {
             ctx.textBaseline = 'top';
         }
 
         lines.forEach((line, i) => {
-            const y = subY + i * lineHeight;
+            const y = subY + i * subLineHeight;
             ctx.fillText(line, dims.width / 2, y);
 
             // Calculate text metrics for decorations
